@@ -21,4 +21,13 @@ Their are all part of the Anaconda python distribution
 
 * opencv (optional, but increase processing speed)
 
+# Run
+
+## Windows
+
+double click on **RootStemExtractor.bat** file
+
+## On Linux or Mac
+
+open a terminal, go to the RootStemExtractor directory and run `python ./RootStemExtractor.py`
 
