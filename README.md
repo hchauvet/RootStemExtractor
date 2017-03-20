@@ -4,6 +4,9 @@ Plant motion tracker in python. Extract skeleton of simple rod-shaped object lik
 
 This an early public release of the code, a documentation is in preparation.
 
+![Screenshot](https://github.com/hchauvet/RootStemExtractor/raw/master/img/Screenshot1.png "screenshot")
+
+
 # Install
 
 For mac and windows user, the simplest way to install it is to download the Anaconda distribution of python (use the branch 2.x of python)
