@@ -34,3 +34,6 @@ double click on **RootStemExtractor.bat** file
 
 open a terminal, go to the RootStemExtractor directory and run `python ./RootStemExtractor.py`
 
+### On Mac 
+
+You could try to run the **Mac_RootStemExtractor.app**, it should work...
