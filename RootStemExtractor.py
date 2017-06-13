@@ -1609,6 +1609,7 @@ def get_growth_length(tiges, cur_tige, thresold='auto', imgs = None, pas = 0.3):
     if scale_cmpix != None:
         sinit *= scale_cmpix
         scur *= scale_cmpix
+        sfinal *= scale_cmpix
         lscale = 'cm'
 
     ax2 = mpl.subplot(G[0,:2])

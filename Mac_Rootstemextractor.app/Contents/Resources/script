@@ -6,4 +6,4 @@
 #source .bash_profile pour Anaconda
 source ~/.bash_profile
 #Run python script
-python ./RootStemExtractor.py
+python2 ./RootStemExtractor.py
