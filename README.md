@@ -32,7 +32,7 @@ double click on **RootStemExtractor.bat** file
 
 ## On Linux or Mac
 
-open a terminal, go to the RootStemExtractor directory and run `python ./RootStemExtractor.py`
+open a terminal, go to the RootStemExtractor directory and run `python2 ./RootStemExtractor.py`
 
 ### On Mac 
 
