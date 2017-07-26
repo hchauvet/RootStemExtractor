@@ -31,9 +31,7 @@ from numpy import (array, ma, arctan2, sqrt, gradient, sign,
 from pylab import find, where
 #from scipy.signal import argrelmax
 from scipy.stats import circmean #Pour faire des moyenne d'angle correcte!!!
-from scipy.optimize import fmin
 from scipy import ndimage
-from scipy.ndimage import rotate
 from scipy import signal
 import matplotlib.pylab as mpl
 
@@ -52,6 +50,14 @@ try:
 except:
     _isnotebook = False
 
+try:
+    import pyximport; pyximport.install()
+    from test_olivier import fast_methode_Olivier
+    _fast_olivier = True
+except:
+    _fast_olivier = False
+    print('Cython is not installed')
+    
 from skimage.exposure import (adjust_sigmoid)
 from skimage.morphology import disk
 import multiprocessing as mp
@@ -67,9 +73,10 @@ except:
 
 import datetime
 import re
-
+from scipy.misc import fromimage
 
 finddigits = re.compile(r'\d+?')
+
 
 
 class Image():
@@ -112,6 +119,18 @@ class Image():
             self.load(fname, use_bw)
 
 
+    def load_img_part(self, fname, crop):
+        """
+        Petite fonction pour ne charger qu'une partie des images 
+        """
+        
+        imgobj = pilimage.open(fname)
+        imgc = imgobj.crop( crop ).convert('L')
+        
+        if self.use_bw:
+            return fromimage( imgc )/255.0
+        else:
+            return fromimage( imgc, 'gray' )/255.0
 
     def load(self, fname):
         if self.use_bw:
@@ -132,39 +151,7 @@ class Image():
                 self.maxwidth = self.data.size[0]
 
 
-        #Orientation tag =id 274 code 1 normal, 8 rotation sur gauche,
-        #6 rotation sur droite, 3 updown
-        """
-        ULTRA SLOW !!!!!
-        try:
-            stat = pilimage.open(fname)._getexif()
-            self.orientation = stat[274]
-        except:
-            pass
 
-        if _iscv2:
-            row,col = self.data.shape[:2]
-
-            angle = None
-            if self.orientation == 6:
-                angle = -90.0
-            if self.orientation == 8:
-                angle = 90.0
-            if self.orientation == 3:
-                angle = 180.0
-
-            if angle != None:
-
-                self.data = rotate(self.data, angle).astype(self.data.dtype)
-
-        else:
-            if self.orientation == 6:
-                self.data = self.data.rotate(-90)
-            if self.orientation == 8:
-                self.data = self.data.rotate(90)
-            if self.orientation == 3:
-                self.data = self.data.rotate(180)
-        """
     def render(self, rescale=True):
 
         if _iscv2:
@@ -235,7 +222,7 @@ class Tiges():
             shared_yb1 = mp.Array(typed, nbtige*nbimage*size)
             shared_xb2 = mp.Array(typed, nbtige*nbimage*size)
             shared_yb2 = mp.Array(typed, nbtige*nbimage*size)
-            shared_gray_level = mp.Array(typed, nbtige*nbimage*size)
+            #shared_gray_level = mp.Array(typed, nbtige*nbimage*size)
 
             self.diam = ctypeslib.as_array(shared_diam.get_obj()).reshape(nbtige, nbimage, size)
             self.xc = ctypeslib.as_array(shared_xc.get_obj()).reshape(nbtige, nbimage, size)
@@ -245,7 +232,7 @@ class Tiges():
             self.yb1 = ctypeslib.as_array(shared_yb1.get_obj()).reshape(nbtige, nbimage, size)
             self.xb2 = ctypeslib.as_array(shared_xb2.get_obj()).reshape(nbtige, nbimage, size)
             self.yb2 = ctypeslib.as_array(shared_yb2.get_obj()).reshape(nbtige, nbimage, size)
-            self.gray_level = ctypeslib.as_array(shared_gray_level.get_obj()).reshape(nbtige, nbimage, size)
+            #self.gray_level = ctypeslib.as_array(shared_gray_level.get_obj()).reshape(nbtige, nbimage, size)
 
             self.diam.fill(30000)
             self.xc.fill(30000)
@@ -255,7 +242,7 @@ class Tiges():
             self.xb2.fill(30000)
             self.yb1.fill(30000)
             self.yb2.fill(30000)
-            self.gray_level.fill(30000)
+            #self.gray_level.fill(30000)
 
         else:
             modeltab = ones( [nbtige, nbimage, size] ) * 30000
@@ -268,7 +255,7 @@ class Tiges():
             self.yb1 = ma.masked_equal( modeltab, 30000 )
             self.xb2 = ma.masked_equal( modeltab, 30000 )
             self.yb2 = ma.masked_equal( modeltab, 30000 )
-            self.gray_level = ma.masked_equal( modeltab, 30000 )
+            #self.gray_level = ma.masked_equal( modeltab, 30000 )
 
     def add_point(self,nbimage,id_tige,pos_in_tige,diam, xc, yc, theta, xb1, yb1, xb2, yb2, graylevel):
         """
@@ -283,7 +270,7 @@ class Tiges():
         self.yb1[id_tige, nbimage, pos_in_tige ]  = yb1
         self.xb2[id_tige, nbimage, pos_in_tige ]  = xb2
         self.yb2[id_tige, nbimage, pos_in_tige ]  = yb2
-        self.gray_level[id_tige, nbimage, pos_in_tige ]  = graylevel
+        #self.gray_level[id_tige, nbimage, pos_in_tige ]  = graylevel
 
     def Mask_invalid(self):
 
@@ -295,7 +282,7 @@ class Tiges():
         self.yb1 = ma.masked_equal( self.yb1, 30000 )
         self.xb2 = ma.masked_equal( self.xb2, 30000 )
         self.yb2 = ma.masked_equal( self.yb2, 30000 )
-        self.gray_level = ma.masked_equal( self.gray_level, 30000 )
+        #self.gray_level = ma.masked_equal( self.gray_level, 30000 )
 
 
     def compress_data(self):
@@ -319,7 +306,7 @@ class Tiges():
             self.xb2 = self.xb2[:,:,:iend_data]
             self.yb1 = self.yb1[:,:,:iend_data]
             self.yb2 = self.yb2[:,:,:iend_data]
-            self.gray_level = self.gray_level[:,:,:iend_data]
+            #self.gray_level = self.gray_level[:,:,:iend_data]
             
             
 def get_tige_border(xi, yi, image, seuil_coupure=0.1):
@@ -340,13 +327,13 @@ def get_tige_border(xi, yi, image, seuil_coupure=0.1):
     #plot( zi )
     ib1, ib2 = get_min_max( zi, coupure=seuil_coupure )
     if type(ib1) == type(None) or type(ib2) == type(None):
-        xcenterf = None
-        ycenterf = None
-        diam = None
-        theta = None
-        b1f = None
-        b2f = None
-        cgray = None
+        xcenterf = 30000.0
+        ycenterf = 30000.0
+        diam = 30000.0
+        theta = 30000.0
+        b1f = 30000.0
+        b2f = 30000.0
+        cgray = 30000
     else:
 
         #Calcul du centre et du rayon
@@ -357,12 +344,12 @@ def get_tige_border(xi, yi, image, seuil_coupure=0.1):
         diam = sqrt( (xb2 - xb1) **2 + (yb1 - yb2)**2 )
 
         #Get the level of gray at center
-        ixc, iyc = int(xcenterf), int(ycenterf)
-        npix = int(diam/2) #taille du rectangle pour faire la moyenne sur les pixels
-        if npix > 2:
-            cgray = image[iyc-npix/2:iyc+npix/2, ixc-npix/2:ixc+npix/2].mean()
-        else:
-            cgray = 30000
+        #ixc, iyc = int(xcenterf), int(ycenterf)
+        #npix = int(diam/2) #taille du rectangle pour faire la moyenne sur les pixels
+        #if npix > 2:
+        #    cgray = image[iyc-npix/2:iyc+npix/2, ixc-npix/2:ixc+npix/2].mean()
+        #else:
+        cgray = 30000
 
 
         #L'angle de la pente
@@ -417,6 +404,7 @@ def get_min_max( z, coupure=0.1):
     return ib1, ib2
 
 
+#from test_olivier import fast_methode_Olivier
 def methode_Olivier(image, tiges_table, id_tige, nbimage, xi, yi, pas, Np,
                     seuil_coupure=0.2, show_tige = False, rayonfilter=True,
                     target = None):
@@ -457,7 +445,7 @@ def methode_Olivier(image, tiges_table, id_tige, nbimage, xi, yi, pas, Np,
 
     #plot(xni, yni,'r')
     #tige.add_point(cpt, D, xc, yc, theta, b1, b2, cgray)
-    if b1 and b2:
+    if b1 != 30000.0  and b2 != 30000.0:
         add_tiges_pts(nbimage,id_tige, cpt, D, xc, yc, theta, b1[0], b1[1], b2[0], b2[1], cgray )
         cpt += 1
 
@@ -478,7 +466,7 @@ def methode_Olivier(image, tiges_table, id_tige, nbimage, xi, yi, pas, Np,
         rtarget = target['R']
 
     #Boucle jusqu'au sommet
-    if xc and yc:
+    if xc != 30000.0 and yc != 30000.0 :
         for i in xrange(Max_iter-1):
             if show_tige:
                 #mpl.figure('test')
@@ -514,7 +502,7 @@ def methode_Olivier(image, tiges_table, id_tige, nbimage, xi, yi, pas, Np,
             xc, yc, D, thetat, b1, b2, cgray = get_tige_border(xi, yi, imp, seuil_coupure=seuil_coupure)
 
 
-            if xc and yc:
+            if xc != 30000.0 and yc != 30000.0:
 
                 #Save tige data
 
@@ -548,7 +536,7 @@ def methode_Olivier(image, tiges_table, id_tige, nbimage, xi, yi, pas, Np,
                     Rmean = None
 
                 #Old 0.5 et 1.2
-                if Rmean!=None and D!=None:
+                if Rmean!=None and D!= 30000.0 :
                     if D <= 0.5 * Rmean or D >= 1.2 * Rmean:
                         passflag = False
                         print("Interuption changement de rayon R=%0.2f moy=%0.2f"%(D,Rmean))
@@ -607,27 +595,42 @@ def find_border_from_contour( polynome, xc, yc, slope, Np=100 ):
 def traite_une_image( image, xypoints, imgnum, tiges, pas = 0.3, seuil="auto", Np = 100,
                       show_tige = False, rois = None, gains = 20 , cut_off = 0.2, disk_size=4,
                       rayonfilter = False, method="Olivier", image_class=None,
-                      end_points = {}, tiges_seuil_offset = {} ):
+                      end_points = {}, tiges_seuil_offset = {}, crops=[] ):
     """
         Fonction pour traiter une image
     """
 
     t = time.time()
-    image_class.load( image )
-    imgF = image_class.render()
+    if len(crops) == 0:
+        image_class.load( image )
+        imgF = image_class.render()
+        #Si on a des zone d'interets pour faire un redressement de contraste local
+        if rois != None:
+            imgF = adjust_image(imgF, rois, gains, cut_off, disk_size)
     #imgF = image_class.get_image(imgnum)
     imgnumF = 0
-    print('load image in %f s'%(time.time()-t))
+    #print('load image in %f s'%(time.time()-t))
 
-    #Si on a des zone d'interets pour faire un redressement de contraste local
-    if rois != None:
-        imgF = adjust_image(imgF, rois, gains, cut_off, disk_size)
+   
 
     #Extraction des images
     for i in xrange( len(xypoints) ):
         xystart = xypoints[i]
         xi, yi= linspace(xystart[0][0], xystart[1][0], Np, dtype='float32'), linspace(xystart[0][1], xystart[1][1], Np, dtype='float32')
-
+        #print(crops)
+        if len(crops) > 0:
+            crop = crops[i]
+            imgF = image_class.load_img_part(image, crop)
+            #mpl.figure('test')
+            #mpl.clf()
+            #mpl.imshow(imgF)
+            xi -= crop[0]
+            yi -= crop[1]
+            #print(xi, yi)
+            #mpl.plot(xi,yi)
+            #mpl.draw()
+            #mpl.show(block=False)
+                    
         target = None
         if i in end_points:
             target = {'xc':float(end_points[i]['xc'][imgnum]),
@@ -646,8 +649,11 @@ def traite_une_image( image, xypoints, imgnum, tiges, pas = 0.3, seuil="auto", N
                 #Quand sensibilité negative on doit augmenter le seuil pour être moins sensible au gradient d'intentensité
                 seuiln -= dseuil
 
-
-            methode_Olivier( imgF, tiges, i, imgnum, xi, yi, pas, Np, seuiln, show_tige, rayonfilter, target)
+            
+            if _fast_olivier:
+                fast_methode_Olivier( imgF, tiges, i, imgnum, xi, yi, pas, Np, seuiln, show_tige, rayonfilter, target)
+            else:
+                methode_Olivier( imgF, tiges, i, imgnum, xi, yi, pas, Np, seuiln, show_tige, rayonfilter, target)
 
         if method == "Hugo":
             print('Implemented in older version')
@@ -662,7 +668,7 @@ def traite_une_image_thread( Queue_images, Queue_tiges, Tigesdata, xypoints,
                              pas = 0.3, seuil="auto", Np = 100, show_tige = False,
                              rois = None, gains = 20, cut_off = 0.2, disk_size=4,
                              rayonfilter=False, method="Olivier", image=None,
-                             end_points = {}, tiges_seuil_offset = {} ):
+                             end_points = {}, tiges_seuil_offset = {}, crops=[] ):
     """
         Fonction pour traiter une image
     """
@@ -675,16 +681,18 @@ def traite_une_image_thread( Queue_images, Queue_tiges, Tigesdata, xypoints,
         for imgT in iter(Queue_images.get, 'STOP'):
             img = imgT[1]
             iimg = imgT[0]
-            imreadfunc( img )
-            imgF = imrendfunc()
+            if len(crops) == 0:
+                imreadfunc( img )
+                imgF = imrendfunc()
+                #Si on a des zone d'interets pour faire un redressement de contraste local
+                if rois != None:
+                    imgF = adjust_image(imgF, rois, gains, cut_off, disk_size)
             #imgF = image.get_image( iimg )
             #print(imgF)
             imgnumF = 0
 
 
-            #Si on a des zone d'interets pour faire un redressement de contraste local
-            if rois != None:
-                imgF = adjust_image(imgF, rois, gains, cut_off, disk_size)
+         
 
 
             #print("test")
@@ -693,6 +701,17 @@ def traite_une_image_thread( Queue_images, Queue_tiges, Tigesdata, xypoints,
                 xystart = xypoints[i]
                 xi, yi= linspace(xystart[0][0], xystart[1][0], Np, dtype='float32'), linspace(xystart[0][1], xystart[1][1], Np, dtype='float32')
 
+                if len(crops) > 0:
+                    crop = crops[i]
+                    imgF = image.load_img_part(img, crop)
+                    #mpl.figure('debug1')
+                    #mpl.imshow(imgF)
+                    xi -= crop[0]
+                    yi -= crop[1]
+                    #print(xi, yi)
+                    #mpl.plot(xi,yi)
+                    #mpl.show()
+                    
                 target = None
                 if i in end_points:
                     target = {'xc':float(end_points[i]['xc'][iimg]),
@@ -711,7 +730,10 @@ def traite_une_image_thread( Queue_images, Queue_tiges, Tigesdata, xypoints,
                         #Quand sensibilité negative on doit augmenter le seuil pour être moins sensible au gradient d'intentensité
                         seuiln -= dseuil
 
-                    methode_Olivier( imgF, Tigesdata, i, iimg, xi, yi, pas, Np, seuiln, show_tige, rayonfilter, target)
+                    if _fast_olivier:
+                        fast_methode_Olivier( imgF, Tigesdata, i, iimg, xi, yi, pas, Np, seuiln, show_tige, rayonfilter, target)
+                    else:
+                        methode_Olivier( imgF, Tigesdata, i, iimg, xi, yi, pas, Np, seuiln, show_tige, rayonfilter, target)
 
                 if method == "Hugo":
                     pass
@@ -768,7 +790,7 @@ def Process_images( file_names, num_images, num_tiges, pas = 0.3, seuil="auto",
                     rois = None, gains = 20, cut_off = 0.2, disk_size=4, rayonfilter=False,
                     method="Olivier", use_bw=True, color_transform=None, color_band=None,
                     output_function=default_output_print, output_function_args = {}, outputdata=None,
-                    end_points={}, tiges_seuil_offset = {}):
+                    end_points={}, tiges_seuil_offset = {}, memory_size=10000, crops=[]):
     """
     Fonction pour lancer le traitement des tiges par recherche de maximum
 
@@ -811,7 +833,7 @@ def Process_images( file_names, num_images, num_tiges, pas = 0.3, seuil="auto",
     #Creation d'objet Image qui contient les specifications de transformation de l'image a traiter
     image = Image(use_bw=use_bw, color_transform=color_transform, color_band=color_band)
 
-
+    
 
 
     #Ouverture des images
@@ -879,7 +901,7 @@ def Process_images( file_names, num_images, num_tiges, pas = 0.3, seuil="auto",
     #Lancement du traitement avec ou sans threads
     ta = time.time()
     results = []
-    Tigesdata = Tiges( len(xypoints), num_images, size=10000, thread_safe=thread)
+    Tigesdata = Tiges( len(xypoints), num_images, size=memory_size, thread_safe=thread)
     #tiges = Tiges_hdf('./test.h5', len(xypoints), num_images)
     #tiges.create_db()
 
@@ -895,7 +917,7 @@ def Process_images( file_names, num_images, num_tiges, pas = 0.3, seuil="auto",
         for w in xrange(worker):
             p = mp.Process( target=traite_une_image_thread, args=(queue, outputs, Tigesdata, xypoints, pas, seuil, Np,
                                                                    show_tige, rois, gains, cut_off, disk_size, rayonfilter,
-                                                                    method, image, end_points, tiges_seuil_offset ) )
+                                                                    method, image, end_points, tiges_seuil_offset, crops ) )
             processes.append( p )
             p.start()
             queue.put('STOP') #Ajout du stop de fin BESOIN DE LE FAIRE A LA FIN DES PROCESS
@@ -963,7 +985,7 @@ def Process_images( file_names, num_images, num_tiges, pas = 0.3, seuil="auto",
 
             results += [ traite_une_image( imgs[imnum], xypoints, imnum, Tigesdata, pas, seuil, Np,
                                            show_tige, rois, gains, cut_off, disk_size, rayonfilter,
-                                           method, image, end_points, tiges_seuil_offset) ]
+                                           method, image, end_points, tiges_seuil_offset, crops) ]
 
         if _isnotebook:
             #clean the cell
@@ -976,6 +998,31 @@ def Process_images( file_names, num_images, num_tiges, pas = 0.3, seuil="auto",
     Tigesdata.compress_data()
     
     output = {'tiges_data':Tigesdata, 'tiges_info': results}
+    
+    #Apply crops offset to data
+    if len(crops) > 0:
+        
+        for i, crop in enumerate(crops):
+            xcr = crop[0]
+            ycr = crop[1]
+            xc = output['tiges_data'].xc[i] 
+            xb1 = output['tiges_data'].xb1[i]
+            xb2 = output['tiges_data'].xb2[i]
+            yc = output['tiges_data'].yc[i]
+            yb1 = output['tiges_data'].yb1[i]
+            yb2 = output['tiges_data'].yb2[i]
+            
+            for i in [xc, xb1, xb2, yc, yb1, yb2]:
+                i.unshare_mask()
+                
+            xc += xcr
+            xb1 += xcr
+            xb2 += xcr
+            
+            yc += ycr
+            yb1 += ycr
+            yb2 += ycr
+            
     if outputdata != None:
         outputdata.put( {"data": output, "imgs": imgs, "xypoints": xypoints} )
         return

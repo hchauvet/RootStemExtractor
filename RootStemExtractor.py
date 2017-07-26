@@ -107,7 +107,7 @@ Beta_data = {}
 End_point_data = {}
 End_point_plot = {}
 Tiges_seuil_offset = {} #Enregistrer les offset des tiges
-
+Crops_data = []
 
 PAS_TRAITEMENT = 0.3
 
@@ -741,6 +741,7 @@ def process_data():
     data_out = data_out['data']
 
 
+    
     #On affiche que l'on fait la sauvegarde
     ax.clear()
     ax.axis('off')
@@ -773,13 +774,16 @@ def process_data():
     canvas.get_tk_widget().focus_force()
 
 def launch_process():
-    global data_out, old_step, thread_process
-
+    global data_out, old_step, thread_process, Crops_data
+    
+    
+    Crops_data = []
     #Test si c'est windows -> pas de version parallele car bug
     if (platform.system().lower() == "windows") or (len(files_to_process)<2):
         #Windows as not shared memory capacity... to bad!!!
         is_thread = False
     else:
+        #True
         is_thread = True
 
     if len(base_tiges) > 0:
@@ -789,7 +793,45 @@ def launch_process():
         reset_graph_data()
 
         data_out = Queue.Queue()
-
+        
+        print('Pre-processing last image')
+        #Preprocessing to guess the max size of the objects and set crop zone for each of them
+        pre_data = {}
+        
+        pre_data = Process_images(file_names=files_to_process[-1],
+                       num_images='all', num_tiges=len(base_tiges), base_points=base_tiges,
+                       thread=is_thread, pas=PAS_TRAITEMENT,
+                       tiges_seuil_offset=Tiges_seuil_offset)
+        
+        
+        tiges_x, tiges_y, tiges_tailles, tiges_angles, tiges_lines,  = traite_tiges2( pre_data[0]['tiges_data'], pas=PAS_TRAITEMENT )
+        #print(tiges_tailles/0.3)
+        #print(tiges_x.shape)
+        max_array_size = tiges_x.shape[2] + 100
+        #print(max_array_size)
+        
+        #Affiche l'image
+        #fig = mpl.figure("test")
+        #mpl.show(block=False)
+        
+        #Load cropped image is slow
+        for i, L in enumerate(tiges_tailles):
+            xyb1, xyb2 = base_tiges[i]
+            x = int( 0.5*(xyb1[0]+xyb2[0]) )
+            y = int( 0.5*(xyb1[1]+xyb2[1]) )
+            xa = x-int(L)
+            ya = y-int(L)
+            xb = x+int(L)+50
+            yb = y+int(L)+50
+            #Crops_data += [ (xa,ya,xb,yb) ]
+            #print(xa,ya,xb,yb)
+            
+        """
+        pre_data = Process_images(file_names=files_to_process,
+                       num_images='all', num_tiges=len(base_tiges), base_points=base_tiges,
+                       thread=is_thread, pas=PAS_TRAITEMENT,
+                       tiges_seuil_offset=Tiges_seuil_offset, memory_size=max_array_size, crops=crops)
+        """
         thread_process = Thread(name="ImageProcessing",
                                           target=Process_images,
                                           kwargs={'file_names':files_to_process,
@@ -802,21 +844,18 @@ def launch_process():
                                           'pas':PAS_TRAITEMENT,
                                           'outputdata':data_out,
                                           'end_points':End_point_data,
-                                          'tiges_seuil_offset': Tiges_seuil_offset})
+                                          'tiges_seuil_offset': Tiges_seuil_offset,
+                                          'memory_size': max_array_size,
+                                          'crops':Crops_data})
 
 
-
+        
+        
         thread_process.setDaemon(True)
         thread_process.start()
         #print('toto')
         check_process()
-
-        """
-        data_out, imgs_out, base_pts_out = Process_images(files_to_process,'all',
-                                                          len(base_tiges), base_points = base_tiges,
-                                                          output_function=plot_progress, thread=is_thread,
-                                                          output_function_args = {'root':root})
-        """
+            
 
 
 
