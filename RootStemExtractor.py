@@ -7,9 +7,11 @@ Petite interface graphique pour traiter les tiges ou les racines
 
 @author: hugo chauvet
 
-Version: 16/10/2015
+Version: 18/04/2018
 
 Change:
+18/04/2018: [Hugo] correct datetime bug. Set percentdiam to 1.4 in MethodOlivier (previous 0.9). Windows system can now use thread
+22/10/2017: [Hugo] Optimisation du positionnement du GUI, utilisation de Tk.grid a la place de Tk.pack
 16/10/2015: [Hugo] Ajout de divers options pour la tige (supression etc..) avec menu click droit
                    +Refactorisation de plot_image et de la gestion du global_tige_id_mapper (pour gerer les suppressions)
 
@@ -17,6 +19,7 @@ Change:
 25/05/2015: [Hugo] Ajout des menus pour l'export des moyennes par tiges et pour toutes les tiges + figures
 20/05/2015: [Hugo] Première version
 """
+
 import platform
 import matplotlib
 matplotlib.use('TkAgg')
@@ -34,7 +37,7 @@ from matplotlib.collections import LineCollection
 
 from numpy import (array, linspace, arctan2, sqrt, sin, cos, pi, timedelta64,
                    arange, hstack, diff, rad2deg, mean, argmin, zeros_like, ma,
-                    cumsum, convolve, ones, log, exp, deg2rad, argsort)
+                    cumsum, convolve, ones, exp, deg2rad)
 
 
 from pylab import find
@@ -46,11 +49,11 @@ import cPickle as pkl
 # implement the default mpl key bindings
 from matplotlib.backend_bases import key_press_handler
 from matplotlib.widgets import RectangleSelector
-from new_libgravimacro import (Process_images, save_results,
+from new_libgravimacro import (save_results,
                            load_results, traite_tiges2, traite_tige2,
                            extract_Angle_Length, plot_sequence,
                            convert_angle, get_photo_time, Image,
-                           compute_pattern_motion)
+                           compute_pattern_motion, ProcessImages)
 
 from Extrawidgets import DraggableLines
 
@@ -65,6 +68,8 @@ finddigits = re.compile(r'\d+?')
 from ttk import Style, Button, Frame, Progressbar, Entry, Scale
 from threading import Thread
 import Queue
+
+__version__ = '18052018'
 
 ########################## GLOBAL DATA ########################################
 data_out = None
@@ -224,6 +229,8 @@ def _open_files():
         #Get time from pictures
         if get_photo_datetime.get():
             print('Extract time from files')
+            dtphoto = []
+
             try:
 
                 for f in files_to_process:
@@ -236,9 +243,10 @@ def _open_files():
 
                 dtphoto = array(dtphoto)
                 #print dtphoto
-            except:
+            except Exception as e:
                 dtphoto = []
                 print('No time in pictures')
+                print(e)
 
         change_button_state()
         plot_image(0, force_clear=True)
@@ -714,6 +722,9 @@ def plot_progress(**kwargs):
     global infos_traitement
     infos_traitement = kwargs
 
+def none_print(**kwargs):
+    output = kwargs
+
 def check_process():
     global root, infos_traitement
 
@@ -775,9 +786,10 @@ def process_data():
 
 def launch_process():
     global data_out, old_step, thread_process, Crops_data
-    
-    
+
+
     Crops_data = []
+    max_array_size = 10000
     #Test si c'est windows -> pas de version parallele car bug
     if (platform.system().lower() == "windows") or (len(files_to_process)<2):
         #Windows as not shared memory capacity... to bad!!!
@@ -793,74 +805,48 @@ def launch_process():
         reset_graph_data()
 
         data_out = Queue.Queue()
-        
-        print('Pre-processing last image')
-        #Preprocessing to guess the max size of the objects and set crop zone for each of them
-        pre_data = {}
-        
-        pre_data = Process_images(file_names=files_to_process[-1],
-                       num_images='all', num_tiges=len(base_tiges), base_points=base_tiges,
-                       thread=is_thread, pas=PAS_TRAITEMENT,
-                       tiges_seuil_offset=Tiges_seuil_offset)
-        
-        
-        tiges_x, tiges_y, tiges_tailles, tiges_angles, tiges_lines,  = traite_tiges2( pre_data[0]['tiges_data'], pas=PAS_TRAITEMENT )
-        #print(tiges_tailles/0.3)
-        #print(tiges_x.shape)
-        max_array_size = tiges_x.shape[2] + 100
-        #print(max_array_size)
-        
-        #Affiche l'image
-        #fig = mpl.figure("test")
-        #mpl.show(block=False)
-        
-        #Load cropped image is slow
-        for i, L in enumerate(tiges_tailles):
-            xyb1, xyb2 = base_tiges[i]
-            x = int( 0.5*(xyb1[0]+xyb2[0]) )
-            y = int( 0.5*(xyb1[1]+xyb2[1]) )
-            xa = x-int(L)
-            ya = y-int(L)
-            xb = x+int(L)+50
-            yb = y+int(L)+50
-            #Crops_data += [ (xa,ya,xb,yb) ]
-            #print(xa,ya,xb,yb)
-            
-        """
-        pre_data = Process_images(file_names=files_to_process,
-                       num_images='all', num_tiges=len(base_tiges), base_points=base_tiges,
-                       thread=is_thread, pas=PAS_TRAITEMENT,
-                       tiges_seuil_offset=Tiges_seuil_offset, memory_size=max_array_size, crops=crops)
-        """
-        thread_process = Thread(name="ImageProcessing",
-                                          target=Process_images,
-                                          kwargs={'file_names':files_to_process,
-                                          'num_images':'all',
-                                          'num_tiges':len(base_tiges),
-                                          'base_points':base_tiges,
-                                          'output_function':plot_progress,
-                                          #'output_function_args': {'root':root},
-                                          'thread':is_thread,
-                                          'pas':PAS_TRAITEMENT,
-                                          'outputdata':data_out,
-                                          'end_points':End_point_data,
-                                          'tiges_seuil_offset': Tiges_seuil_offset,
-                                          'memory_size': max_array_size,
-                                          'crops':Crops_data})
+
+        if len(files_to_process) > 1:
+            print('Pre-processing last image (to get maximum plant size)')
+            #Preprocessing to guess the max size of the objects and set crop zone for each of them
+            pre_data = {}
+
+            pre_data = ProcessImages(file_names=files_to_process[-1],
+                                     num_images='all',
+                                     num_tiges=len(base_tiges),
+                                     base_points=base_tiges, thread=is_thread,
+                                     pas=PAS_TRAITEMENT,
+                                     tiges_seuil_offset=Tiges_seuil_offset,
+                                     output_function=none_print)
 
 
-        
-        
-        thread_process.setDaemon(True)
-        thread_process.start()
-        #print('toto')
-        check_process()
-            
+            tiges_x, tiges_y, tiges_tailles, tiges_angles, tiges_lines,  = traite_tiges2(pre_data[0]['tiges_data'],
+                                                                                         pas=PAS_TRAITEMENT )
+            #print(tiges_tailles/0.3)
+            #print(tiges_x.shape)
+            max_array_size = tiges_x.shape[2] + 100
+
+            thread_process = Thread(name="ImageProcessing",
+                                              target=ProcessImages,
+                                              kwargs={'file_names':files_to_process,
+                                              'num_images':'all',
+                                              'num_tiges':len(base_tiges),
+                                              'base_points':base_tiges,
+                                              'output_function':plot_progress,
+                                              #'output_function_args': {'root':root},
+                                              'thread':is_thread,
+                                              'pas':PAS_TRAITEMENT,
+                                              'outputdata':data_out,
+                                              'end_points':End_point_data,
+                                              'tiges_seuil_offset': Tiges_seuil_offset,
+                                              'memory_size': max_array_size,
+                                              'crops':Crops_data})
 
 
-
-
-
+            thread_process.setDaemon(True)
+            thread_process.start()
+            #print('toto')
+            check_process()
 
 def Traite_data():
     global tiges_x, tiges_y, tiges_tailles, tiges_angles, tiges_lines, tiges_measure_zone
@@ -1080,7 +1066,7 @@ def show_one_tige(tige_id=None):
 
     figt = mpl.figure('tige %s'%str(tname), figsize=(10,6))
 
-    G = mpl.GridSpec(5,3)
+    G = mpl.GridSpec(5, 3, wspace=.7, hspace=1)
     dtps = arange(len(tiges_tailles[cur_tige]))
     if get_photo_datetime.get() and dtphoto != []:
         tps = dtphoto
@@ -1147,8 +1133,14 @@ def show_one_tige(tige_id=None):
         tax3.set_ylabel('Tip angle (deg)')
         tax3.set_xlabel(xlabel)
         l2, = tax3.plot([tps[0],tps[0]],tax3.get_ylim(),'k--',lw=1.5)
-        select_deb, = tax4.plot([tps[5]]*2, [0,1],'m', lw=3, picker=5)
-        select_fin, = tax4.plot([tps[-5]]*2, [0,1],'m', lw=3, picker=5)
+        try:
+            select_deb, = tax4.plot([tps[5]]*2, [0,1],'m', lw=3, picker=5)
+            select_fin, = tax4.plot([tps[-5]]*2, [0,1],'m', lw=3, picker=5)
+        except:
+            print('Not enouth images for estimation of beta')
+            select_deb, = tax4.plot([tps[0]]*2, [0,1],'m', lw=3, picker=5)
+            select_fin, = tax4.plot([tps[0]]*2, [0,1],'m', lw=3, picker=5)
+            
         plfitA, = tax3.plot([],[],'m', lw=1.5)
         dlines = DraggableLines([select_deb, select_fin])
         #tax4.set_xticks([])
@@ -1181,14 +1173,7 @@ def show_one_tige(tige_id=None):
         tax2.set_ylabel('Angle (deg)')
         tax4.axis('off')
 
-    figt.tight_layout()
-
-
-    #show_tige_options()
-
-
-
-
+    #figt.tight_layout()
 
     def OnPick(e):
         dlines.on_press(e)
@@ -1199,17 +1184,18 @@ def show_one_tige(tige_id=None):
     def OnRelease(e):
         dlines.on_release(e)
 
-        #Update fillbetween_x
-        xa = select_deb.get_xdata()[0]
-        xb = select_fin.get_xdata()[0]
-        xdeb = min(xa,xb)
-        xfin = max(xa,xb)
-        #print(xdeb, xfin)
-        fit_beta(xdeb, xfin)
+        if tax4.contains(e)[0]:
+            #Update fillbetween_x
+            xa = select_deb.get_xdata()[0]
+            xb = select_fin.get_xdata()[0]
+            xdeb = min(xa,xb)
+            xfin = max(xa,xb)
+            #print(xdeb, xfin)
+            fit_beta(xdeb, xfin)
 
     def OnClick(event):
 
-        if event.xdata != None and (tax3.contains(event)[0] or tax2.contains(event)[0]):
+        if event.xdata is not None and (tax3.contains(event)[0] or tax2.contains(event)[0]):
 
             t = int(round(event.xdata))
             #Min distance to clicked point
@@ -1246,6 +1232,8 @@ def show_one_tige(tige_id=None):
         except:
             pass
 
+        mpl.close('tige %s'%str(tname))
+
     #Add click event for the figure
     figt.canvas.mpl_connect('button_press_event', OnClick)
     figt.canvas.mpl_connect('close_event', on_close)
@@ -1272,6 +1260,7 @@ def show_B(tige_id=None):
 
 def plot_moyenne():
     #Fonction pour tracer les courbes moyennes des tiges
+    #mpl.close('all')
 
     if len(files_to_process) > 1:
         #On regroupe les données dans un tableau pandas
@@ -1295,7 +1284,7 @@ def plot_moyenne():
                                          image_path_mod=[change_path], get_time_from_photos=get_photo_datetime.get() )
 
 
-        fig = mpl.figure(u'Série temporelles',figsize=(10,5))
+        fig = mpl.figure(u'Série temporelles avec moyenne',figsize=(10,5))
         G = mpl.GridSpec(2,4)
         ax1 = mpl.subplot(G[0,:3])
         if angle_0_360.get():
@@ -1325,8 +1314,8 @@ def plot_moyenne():
         #print legendtige
         ax1.legend(legendtige+["Moyenne"], bbox_to_anchor=(1.02, 1), loc=2)
 
-        mpl.tight_layout()
-        mpl.show()
+        fig.tight_layout()
+        fig.show()
 
     else:
         print(u"Pas de serie temporelle, une seule photo traitée")
@@ -1336,7 +1325,7 @@ def plot_moyenne():
 def test_detection():
 
     #Au moins une base de tige et une image
-    if cur_image != None and len(base_tiges)>0 :
+    if cur_image is not None and len(base_tiges)>0 :
 
         #Load cur image
         imtmp = Image(color_transform='COLOR_RGB2BGR', maxwidth=None)
@@ -1987,8 +1976,9 @@ if __name__ == '__main__':
     root = Tk.Tk()
     root.style = Style()
     root.style.theme_use("clam")
-    root.wm_title("RootStemExtractor")
-
+    root.wm_title("RootStemExtractor -- version:%s" % (__version__))
+    print("RootStemExtractor -- version:%s" % (__version__))
+    
     #TOP MENU BAR
     menubar = Tk.Menu(root)
 
@@ -2029,7 +2019,8 @@ if __name__ == '__main__':
 
     #Display the menu
     root.config(menu=menubar)
-
+    root.columnconfigure(1, weight=1, minsize=600)
+    root.rowconfigure(1, weight=1)
     #Floating menu (pour afficher des infos pour une tige)
     floatmenu = Tk.Menu(root, tearoff=0)
     #floatmenu.add_command(label="Inverser la base", command=_reverse_tige)
@@ -2058,36 +2049,48 @@ if __name__ == '__main__':
 
     #BOTTOM MENU BAR
     buttonFrame = Frame(master=root)
-    buttonFrame.pack(side=Tk.BOTTOM)
+    #buttonFrame.pack(side=Tk.BOTTOM)
+    buttonFrame.grid(row=0, column=0, sticky=Tk.W)
     button_traiter = Button(master=buttonFrame, text='Traiter', command=launch_process, state=Tk.DISABLED)
     button_listimages = Button(master=buttonFrame, text="Liste d'images", command=show_image_list, state=Tk.DISABLED)
     button_addtige = Button(master=buttonFrame, text='Ajouter une base', command=_addtige, state=Tk.DISABLED)
     button_supr_all_tige = Button(master=buttonFrame, text='Supprimer les bases', command=_supr_all_tiges, state=Tk.DISABLED)
     button_ouvrir = Button(master=buttonFrame, text='Ouvrir', command=_open_files)
-    prog_bar = Progressbar(master=buttonFrame, length=200, mode='determinate')
+    prog_bar = Progressbar(master=root, mode='determinate')
     #Ajout d'un bouton export to csv
     #button_export = Tk.Button(master=buttonFrame, text=u'Exporter série vers (csv)', command=_export_to_csv, state=Tk.DISABLED)
 
-
+    """
     button_ouvrir.pack(side=Tk.LEFT)
     button_listimages.pack(side=Tk.LEFT)
     button_addtige.pack(side=Tk.LEFT)
     button_supr_all_tige.pack(side=Tk.LEFT)
     button_traiter.pack(side=Tk.LEFT)
     prog_bar.pack(side=Tk.LEFT, padx=10)
+    """
+    button_ouvrir.grid(row=0, column=0)
+    button_listimages.grid(row=0, column=1)
+    button_addtige.grid(row=0, column=2)
+    button_supr_all_tige.grid(row=0, column=3)
+    button_traiter.grid(row=0, column=4)
+    prog_bar.grid(row=2, columnspan=2, sticky=Tk.E+Tk.W)
+    
     #button_export.pack(side=Tk.LEFT)
-
-    fig = mpl.figure(figsize=(10,8))
+    #figsize=(10,8)
+    fig = mpl.figure()
     ax = fig.add_subplot(111)
+    
     # a tk.DrawingArea
     canvas = FigureCanvasTkAgg(fig, master=root)
     canvas.show()
-    canvas.get_tk_widget().pack(side=Tk.BOTTOM, fill=Tk.BOTH, expand=1)
+    #canvas.get_tk_widget().pack(side=Tk.BOTTOM, fill=Tk.BOTH, expand=1)
+    canvas.get_tk_widget().grid(row=1, columnspan=2, sticky=Tk.W+Tk.E+Tk.N+Tk.S)
     plot_image(cur_image)
-
-    toolbar = NavigationToolbar2TkAgg( canvas, root )
+    tbar_frame = Tk.Frame(root)
+    tbar_frame.grid(row=0, column=1, sticky="ew")
+    toolbar = NavigationToolbar2TkAgg( canvas, tbar_frame )
     toolbar.update()
-    canvas._tkcanvas.pack(side=Tk.BOTTOM, fill=Tk.BOTH, expand=1)
+    #canvas._tkcanvas.pack(side=Tk.BOTTOM, fill=Tk.BOTH, expand=1)
 
     def on_key_event(event):
         print(u'you pressed %s'%event.key)
@@ -2222,4 +2225,3 @@ if __name__ == '__main__':
 
     root.mainloop()
 
-    

@@ -6,6 +6,12 @@ This an early public release of the code, a documentation is in preparation.
 
 ![Screenshot](https://github.com/hchauvet/RootStemExtractor/raw/master/img/Screenshot1.png "screenshot")
 
+# ChangeLog
+
+* Version 18052018: 
+  Change multiprocessing process (Windows user can now use multiprocessing).
+  Change the value of exploration diameter from 0.9 to 1.4 (line 728 of MethodOlivier in new_libgravimacro.py) 
+  Remove bug with None values 
 
 # Install
 
