@@ -860,6 +860,108 @@ def MethodeOlivier(image, tige_table, id_tige, nbimage, xi, yi, pas, Np,
 
 ###############################################################################
 
+
+#implementation alternative de Queue pour avoir un qsize qui fonctionne meme sous osX
+
+class SharedCounter(object):
+    """ A synchronized shared counter.
+
+    The locking done by multiprocessing.Value ensures that only a single
+    process or thread may read or write the in-memory ctypes object. However,
+    in order to do n += 1, Python performs a read followed by a write, so a
+    second process may read the old value before the new one is written by the
+    first process. The solution is to use a multiprocessing.Lock to guarantee
+    the atomicity of the modifications to Value.
+
+    This class comes almost entirely from Eli Bendersky's blog:
+    http://eli.thegreenplace.net/2012/01/04/shared-counter-with-pythons-multiprocessing/
+
+    """
+
+    def __init__(self, n = 0):
+        self.count = mp.Value('i', n)
+
+    def increment(self, n = 1):
+        """ Increment the counter by n (default = 1) """
+        with self.count.get_lock():
+            self.count.value += n
+
+    @property
+    def value(self):
+        """ Return the value of the counter """
+        return self.count.value
+
+import multiprocessing.queues 
+
+class JoinableQueue(multiprocessing.queues.JoinableQueue):
+    """ A portable implementation of multiprocessing.Queue.
+
+    Because of multithreading / multiprocessing semantics, Queue.qsize() may
+    raise the NotImplementedError exception on Unix platforms like Mac OS X
+    where sem_getvalue() is not implemented. This subclass addresses this
+    problem by using a synchronized shared counter (initialized to zero) and
+    increasing / decreasing its value every time the put() and get() methods
+    are called, respectively. This not only prevents NotImplementedError from
+    being raised, but also allows us to implement a reliable version of both
+    qsize() and empty().
+
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(JoinableQueue, self).__init__(*args, **kwargs)
+        self.size = SharedCounter(0)
+
+    def put(self, *args, **kwargs):
+        self.size.increment(1)
+        super(JoinableQueue, self).put(*args, **kwargs)
+
+    def get(self, *args, **kwargs):
+        self.size.increment(-1)
+        return super(JoinableQueue, self).get(*args, **kwargs)
+
+    def qsize(self):
+        """ Reliable implementation of multiprocessing.Queue.qsize() """
+        return self.size.value
+
+    def empty(self):
+        """ Reliable implementation of multiprocessing.Queue.empty() """
+        return not self.qsize()
+
+class Queue(multiprocessing.queues.Queue):
+    """ A portable implementation of multiprocessing.Queue.
+
+    Because of multithreading / multiprocessing semantics, Queue.qsize() may
+    raise the NotImplementedError exception on Unix platforms like Mac OS X
+    where sem_getvalue() is not implemented. This subclass addresses this
+    problem by using a synchronized shared counter (initialized to zero) and
+    increasing / decreasing its value every time the put() and get() methods
+    are called, respectively. This not only prevents NotImplementedError from
+    being raised, but also allows us to implement a reliable version of both
+    qsize() and empty().
+
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(Queue, self).__init__(*args, **kwargs)
+        self.size = SharedCounter(0)
+
+    def put(self, *args, **kwargs):
+        self.size.increment(1)
+        super(Queue, self).put(*args, **kwargs)
+
+    def get(self, *args, **kwargs):
+        self.size.increment(-1)
+        return super(Queue, self).get(*args, **kwargs)
+
+    def qsize(self):
+        """ Reliable implementation of multiprocessing.Queue.qsize() """
+        return self.size.value
+
+    def empty(self):
+        """ Reliable implementation of multiprocessing.Queue.empty() """
+        return not self.qsize()
+
+    
 class TraiteImageThread:
 
     def __init__(self, image_file, image_num, xypoints, max_iter,
@@ -1085,8 +1187,8 @@ def ProcessImages(file_names, num_images, num_tiges, pas=0.3, seuil="auto",
 
     # Lancement du traitement avec ou sans threads
     ta = time.time()
-    results = mp.Queue() # to store output of workers
-    tasks = mp.JoinableQueue()
+    results = Queue() # to store output of workers
+    tasks = JoinableQueue()
 
     num_worker = mp.cpu_count()  # Nombre de processeurs
     num_images = len(imgs)
@@ -1536,7 +1638,7 @@ def extract_Angle_Length(data_path, output_file_name, global_tige_id=None,
     # Save data to a csv
     if output_file_name != None:
         print(u"Saved to %s" % output_file_name)
-        data_out.to_csv(output_file_name, index=False)
+        data_out.to_csv(output_file_name, index=False)       
     else:
         return data_out
 

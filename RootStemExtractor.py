@@ -7,9 +7,10 @@ Petite interface graphique pour traiter les tiges ou les racines
 
 @author: hugo chauvet
 
-Version: 18/04/2018
+Version: 08/06/2018
 
 Change:
+08/06/2018: [Hugo] Correct queue.qsize() bug in osX (car marche pas sur cette plateforme
 18/04/2018: [Hugo] correct datetime bug. Set percentdiam to 1.4 in MethodOlivier (previous 0.9). Windows system can now use thread
 22/10/2017: [Hugo] Optimisation du positionnement du GUI, utilisation de Tk.grid a la place de Tk.pack
 16/10/2015: [Hugo] Ajout de divers options pour la tige (supression etc..) avec menu click droit
@@ -69,7 +70,7 @@ from ttk import Style, Button, Frame, Progressbar, Entry, Scale
 from threading import Thread
 import Queue
 
-__version__ = '18052018'
+__version__ = '08062018'
 
 ########################## GLOBAL DATA ########################################
 data_out = None
@@ -596,12 +597,11 @@ def _export_xytemps_to_csv():
             change_path = lambda pname: base_dir_path+pname['imgname'].split('/')[-1]
 
         #Get the pandas DataFrame from the data
-        dataframe = extract_Angle_Length( traitement_file, outfileName, global_tige_id=global_id,
-                                         image_path_mod=[change_path],
-                                         get_time_from_photos=get_photo_datetime.get(),
-                                         xy = True )
-
-        dataframe.to_csv(outfileName, index=False)
+        extract_Angle_Length( traitement_file, outfileName, global_tige_id=global_id,
+                             image_path_mod=[change_path],
+                             get_time_from_photos=get_photo_datetime.get(),
+                             xy = True )
+        
 
 def _export_mean_to_csv():
     #Use the function to export angle moyen et taille moyenne vers csv
