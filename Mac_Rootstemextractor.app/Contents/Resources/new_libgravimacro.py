@@ -15,6 +15,12 @@ Modif
 13/10/2016 Hugo: Clean the file libgravimacro to only keep one method and usefull functions
 
 """
+import platform
+if (platform.system().lower() == "windows"):
+    _windows = True
+else:
+    _windows = False
+    
 try:
     # Pour charger les image rapidement
     import cv2
@@ -906,7 +912,8 @@ class JoinableQueue(multiprocessing.queues.JoinableQueue):
     qsize() and empty().
 
     """
-
+    
+    
     def __init__(self, *args, **kwargs):
         super(JoinableQueue, self).__init__(*args, **kwargs)
         self.size = SharedCounter(0)
@@ -940,7 +947,8 @@ class Queue(multiprocessing.queues.Queue):
     qsize() and empty().
 
     """
-
+    
+    
     def __init__(self, *args, **kwargs):
         super(Queue, self).__init__(*args, **kwargs)
         self.size = SharedCounter(0)
@@ -1187,8 +1195,12 @@ def ProcessImages(file_names, num_images, num_tiges, pas=0.3, seuil="auto",
 
     # Lancement du traitement avec ou sans threads
     ta = time.time()
-    results = Queue() # to store output of workers
-    tasks = JoinableQueue()
+    if _windows:
+        results = mp.Queue()
+        tasks = mp.JoinableQueue()
+    else:
+        results = Queue() # to store output of workers
+        tasks = JoinableQueue()
 
     num_worker = mp.cpu_count()  # Nombre de processeurs
     num_images = len(imgs)

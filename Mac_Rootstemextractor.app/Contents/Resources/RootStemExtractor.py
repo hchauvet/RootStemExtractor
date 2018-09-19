@@ -1414,8 +1414,8 @@ def get_growth_length(tiges, cur_tige, thresold='auto', imgs = None, pas = 0.3):
         AA0 = Arad[cur_tps, ds_start:]/Arad[cur_tps, ds_start]
         signal = ma.log(AA0[:len(Sc[~AA0.mask])])
 
-        pl_A_exp.set_data( Sc[~signal.mask], AA0[~signal.mask] )
-        pl_A_log.set_data( Sc[~signal.mask], signal[~signal.mask] )
+        #pl_A_exp.set_data( Sc[~signal.mask], AA0[~signal.mask][1:] )
+        #pl_A_log.set_data( Sc[~signal.mask], signal[~signal.mask][1:] )
 
         try:
             ax4.set_xlim(0, Sc.max())
@@ -1621,10 +1621,10 @@ def get_growth_length(tiges, cur_tige, thresold='auto', imgs = None, pas = 0.3):
         cy=convolve(wind/wind.sum(), dyT, mode='valid')[(W/2-1):-(W/2)-1]
         sdx[i,:len(cx)] = cx
         sdy[i,:len(cy)] = cy
-
-
+        
     sdx = ma.masked_less_equal(sdx, -100.0)
     sdy = ma.masked_less_equal(sdy, -100.0)
+
     Arad = ma.arctan2( -sdx, sdy )
     A = rad2deg( Arad )
 
@@ -1632,7 +1632,7 @@ def get_growth_length(tiges, cur_tige, thresold='auto', imgs = None, pas = 0.3):
     sinit = cumsum( sqrt( sdx[0]**2 + sdy[0]**2 ) )
     sfinal = cumsum( sqrt( sdx[-1]**2 + sdy[-1]**2 ) )
     scur = cumsum( sqrt( sdx[cur_tps]**2 + sdy[cur_tps]**2 ) )
-
+    
     lscale = 'pix'
     if scale_cmpix != None:
         sinit *= scale_cmpix
@@ -1673,9 +1673,11 @@ def get_growth_length(tiges, cur_tige, thresold='auto', imgs = None, pas = 0.3):
     pl_seuil_tps, = ax2.plot([sinit[ds_start]]*2, ax2.get_ylim(), 'k--', picker=10)
     pl_seuil_pts, = ax1.plot(tiges.xc[cur_tige,0,ds_start]-imgxmi, tiges.yc[cur_tige,0,ds_start]-imgymi, 'ro', ms=12)
     ax2.legend(loc=0,prop={'size':10})
-
+    
     ax3 = mpl.subplot(G[1,:2], sharex=ax2)
-    colorm = ax3.pcolormesh(sfinal, arange(dx.shape[0]), A)
+    print(sfinal, type(sfinal), sfinal.shape)
+    print(dx.shape[0])
+    colorm = ax3.pcolormesh(sfinal[~sfinal.mask], arange(dx.shape[0]), A[:,~sfinal.mask])
     ax3.set_ylim(0, dx.shape[0])
     cbar = mpl.colorbar(colorm, use_gridspec=True, pad=0.01)
     cbar.ax.tick_params(labelsize=10)
