@@ -7,7 +7,10 @@ This an early public release of the code, a documentation is in preparation.
 ![Screenshot](https://github.com/hchauvet/RootStemExtractor/raw/master/img/Screenshot1.png "screenshot")
 
 # ChangeLog
-
+* Version 24092018:
+  Remove test dectection (Bug with Thread and matplotlib!)
+  Correct bug when only one image is loaded, now the processing could be launched.
+  
 * Version 18052018: 
   Change multiprocessing process (Windows user can now use multiprocessing).
   Change the value of exploration diameter from 0.9 to 1.4 (line 728 of MethodOlivier in new_libgravimacro.py) 

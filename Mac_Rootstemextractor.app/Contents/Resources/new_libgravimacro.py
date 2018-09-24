@@ -565,159 +565,10 @@ def get_min_max(z, coupure=0.1):
     return ib1, ib2
 
 
-# from test_olivier import fast_methode_Olivier
-def methode_Olivier(image, tige_table, id_tige, nbimage, xi, yi, pas, Np,
-                    seuil_coupure=0.2, show_tige=False, rayonfilter=True,
-                    target=None):
-    """
-        Methode d'Olivier
-    """
-
-    basexi = arange(100, dtype='float32')
-    # Variables
-    Max_iter = tige_table.size
-    # tige = Tige( id_tige, pas, size=Max_iter ) #Pour enregistrer les infos d'une tige
-    cpt = 0
-    bufferangle = int(3 / pas)
-    passflag = True
-    imp = image
-    # Mon reglage avnt 0.9 et oliv 1.4
-    percent_diam = 0.9
-
-    # Astuce pour petit grain de temps dans la boucle
-    add_tiges_pts = tige_table.add_point
-    tdiams = tige_table.diam
-    txcs = tige_table.xc
-    tycs = tige_table.yc
-    tthetas = tige_table.theta
-
-    # Pour test d'un buffer sur les distance
-    txb1 = tige_table.xb1
-    txb2 = tige_table.xb2
-    tyb1 = tige_table.yb1
-    tyb2 = tige_table.yb2
-
-    # ny, nx = shape(image)
-    # fi = RectBivariateSpline(arange(nx), arange(ny), image.T, kx=1, ky=1 )
-    # imp_local = local_contrast( imp, mean(xi), mean(yi) )
-    # Premier transect
-    xc, yc, D, theta, b1, b2, cgray = get_tige_border(xi, yi, imp, seuil_coupure=seuil_coupure)
-
-    # plot(xni, yni,'r')
-    # tige.add_point(cpt, D, xc, yc, theta, b1, b2, cgray)
-    if b1 != 30000.0 and b2 != 30000.0:
-        add_tiges_pts(nbimage, id_tige, cpt, D, xc, yc, theta, b1[0], b1[1], b2[0], b2[1], cgray)
-        cpt += 1
-
-    # Pour le plot en live
-    if show_tige:
-        mpl.figure('test')
-        axt = mpl.gca()
-        linedetect, = axt.plot(xi, yi, color=(0, 1, 0), lw=2)
-        b1line, = axt.plot(txb1[id_tige, nbimage, :], tyb1[id_tige, nbimage, :], 'co', mec='c')
-        b2line, = axt.plot(txb2[id_tige, nbimage, :], tyb2[id_tige, nbimage, :], 'go', mec='g')
-        mpl.draw()
-    # print "#########"
-
-    # Target
-    if target != None:
-        xtarget = target['xc']
-        ytarget = target['yc']
-        rtarget = target['R']
-
-    # Boucle jusqu'au sommet
-    if xc != 30000.0 and yc != 30000.0:
-        for i in xrange(Max_iter - 1):
-            if show_tige:
-                # mpl.figure('test')
-                linedetect.set_data(xi, yi)
-                b1line.set_data([txb1[id_tige, nbimage, :], tyb1[id_tige, nbimage, :]])
-                b2line.set_data([txb2[id_tige, nbimage, :], tyb2[id_tige, nbimage, :]])
-                # plot( [xi[0], xi[-1]], [yi[0], yi[-1]] , 'r--')
-                mpl.draw()
-
-            # print theta, xc, yc
-            # Angle et projection pour le tir suivant ATTENTION AU MASQUE
-            # 0ld 1.4
-            buffD = tdiams[id_tige, nbimage, :cpt]
-            if len(buffD) > bufferangle:
-                RR = percent_diam * buffD[-bufferangle:].mean()
-            else:
-                RR = percent_diam * buffD.mean()
-
-            # Oldway
-            x1n = xc - pas * sin(theta) - RR * cos(theta)
-            y1n = yc - pas * cos(theta) + RR * sin(theta)
-            x2n = xc - pas * sin(theta) + RR * cos(theta)
-            y2n = yc - pas * cos(theta) - RR * sin(theta)
-
-            dx = (x2n - x1n) / float(Np - 1)
-            dy = (y2n - y1n) / float(Np - 1)
-
-            xi = basexi * dx + x1n
-            yi = basexi * dy + y1n
-
-            # imp_local = local_contrast( imp, xc, yc )
-            xc, yc, D, thetat, b1, b2, cgray = get_tige_border(xi, yi, imp, seuil_coupure=seuil_coupure)
-
-            if xc != 30000.0 and yc != 30000.0:
-
-                # Save tige data
-
-                add_tiges_pts(nbimage, id_tige, cpt, D, xc, yc, thetat, b1[0], b1[1], b2[0], b2[1], cgray)
-
-                buffx = txcs[id_tige, nbimage, :cpt]
-                buffy = tycs[id_tige, nbimage, :cpt]
-                bufftheta = tthetas[id_tige, nbimage, :cpt]
-
-                if len(buffx) > bufferangle:
-                    # OLD VERSION RACINE SANS THETATMP just bufferanglemean ... car bug quand entre une certaine valeur
-                    # CAR singularité quand on passe de -180 a +180 (vers le bas aligné avec g !!!!) ou de +0 à -0
-                    # BUG RESOLVED WITH CIRCMEAN
-
-                    thetatmp = circmean(arctan2(-diff(buffx[-bufferangle / 2:]), -diff(buffy[-bufferangle / 2:])))
-                    theta = circmean(ma.hstack([bufftheta[-bufferangle:], thetatmp]))
-                    # print theta
-                    tthetas[id_tige, nbimage, cpt] = theta
-
-                cpt += 1
-
-            else:
-                passflag = False
-
-            # coupure sur le rayon si trop petit
-            if rayonfilter:
-                buffR = tdiams[id_tige, nbimage, :cpt]
-                if len(buffR) > 10:
-                    Rmean = buffR[:-10].mean()
-                else:
-                    Rmean = None
-
-                # Old 0.5 et 1.2
-                if Rmean != None and D != 30000.0:
-                    if D <= 0.5 * Rmean or D >= 1.2 * Rmean:
-                        passflag = False
-                        print("Interuption changement de rayon R=%0.2f moy=%0.2f" % (D, Rmean))
-
-            if cpt >= Max_iter:
-                passflag = False
-                print("Iterations coupure")
-
-            # Add a stop condition if target is defined (distance relative to target less than a value)
-            if xc != None and target != None:
-                dist = sqrt((xtarget - xc) ** 2 + (ytarget - yc) ** 2)
-                if dist <= rtarget:
-                    # print('End point reached')
-                    passflag = False
-
-            if not passflag:
-                # Stop iteration
-                break
-
 
 def MethodeOlivier(image, tige_table, id_tige, nbimage, xi, yi, pas, Np,
                    seuil_coupure=0.2, show_tige=False, rayonfilter=True,
-                   target=None):
+                   target=None, output_fig=None):
     """
         Methode d'Olivier
     """
@@ -760,12 +611,21 @@ def MethodeOlivier(image, tige_table, id_tige, nbimage, xi, yi, pas, Np,
 
     # Pour le plot en live
     if show_tige:
-        mpl.figure('test')
-        axt = mpl.gca()
+        if output_fig is None:
+            fig = mpl.figure('test')
+            axt = mpl.gca()
+        else:
+            print(output_fig)
+            fig = output_fig
+            axt = fig.get_axes()[0]
+            
+        # axt.imshow(image)
         linedetect, = axt.plot(xi, yi, color=(0, 1, 0), lw=2)
         b1line, = axt.plot(txb1[id_tige, :], tyb1[id_tige, :], 'co', mec='c')
         b2line, = axt.plot(txb2[id_tige, :], tyb2[id_tige, :], 'go', mec='g')
-        mpl.draw()
+        # fig.show()
+        fig.canvas.draw()
+        
     # print "#########"
 
     # Target
@@ -783,7 +643,7 @@ def MethodeOlivier(image, tige_table, id_tige, nbimage, xi, yi, pas, Np,
                 b1line.set_data([txb1[id_tige, :], tyb1[id_tige, :]])
                 b2line.set_data([txb2[id_tige, :], tyb2[id_tige, :]])
                 # plot( [xi[0], xi[-1]], [yi[0], yi[-1]] , 'r--')
-                mpl.draw()
+                fig.canvas.draw()
 
             # print theta, xc, yc
             # Angle et projection pour le tir suivant ATTENTION AU MASQUE
@@ -974,7 +834,7 @@ class TraiteImageThread:
 
     def __init__(self, image_file, image_num, xypoints, max_iter,
                  pas=0.3, seuil="auto", Np=100, show_tige=False, rayonfilter=False, method="Olivier", end_points={},
-                 tiges_seuil_offset={}):
+                 tiges_seuil_offset={}, output_fig=None):
 
         self.img = image_file
         self.image_num = image_num
@@ -988,7 +848,7 @@ class TraiteImageThread:
         self.method = method
         self.end_points = end_points
         self.tiges_seuil_offset = tiges_seuil_offset
-
+        self.output_fig = output_fig
 
         # Create memory space and special variables
         self.Ntige = len(self.xypoints)
@@ -1034,7 +894,7 @@ class TraiteImageThread:
                     seuiln -= dseuil
 
                 MethodeOlivier(image_bw, self.tige_data, i, self.image_num, xi, yi, self.pas, self.Np, seuiln,
-                               self.show_tige, self.rayonfilter, target)
+                               self.show_tige, self.rayonfilter, target, self.output_fig)
 
         return self.image_num, self.tige_data
 
@@ -1070,8 +930,9 @@ class Worker(mp.Process):
 
             try:
                 task_result = next_task(self.imagep)
-            except:
+            except Exception as e:
                 print('Detection Failed')
+                print(e)
                 task_result = None
 
             self.task_queue.task_done()
@@ -1120,7 +981,7 @@ def ProcessImages(file_names, num_images, num_tiges, pas=0.3, seuil="auto",
                   rois=None, gains=20, cut_off=0.2, disk_size=4, rayonfilter=False,
                   method="Olivier", use_bw=True, color_transform=None, color_band=None,
                   output_function=default_output_print, output_function_args={}, outputdata=None,
-                  end_points={}, tiges_seuil_offset={}, memory_size=10000, crops=[]):
+                  end_points={}, tiges_seuil_offset={}, memory_size=10000, crops=[], output_fig=None):
     """
     Fonction pour lancer le traitement des tiges par recherche de maximum
 
@@ -1158,6 +1019,8 @@ def ProcessImages(file_names, num_images, num_tiges, pas=0.3, seuil="auto",
             Allow to stop the iterative processe when the distance between the last detected point and the end point is lest than R
 
     -tiges_seuil_offset: dict[tige_id] = offset seuil, en % pour ajouter au seuil auto afin de rendre + (+xx%) ou - (-xx%) sensible la detection
+
+    -output_fig: [optional, default: None] store the figure to display the result of the treatment in live
     """
 
     # Creation d'objet Image qui contient les specifications de transformation de l'image a traiter
@@ -1165,7 +1028,7 @@ def ProcessImages(file_names, num_images, num_tiges, pas=0.3, seuil="auto",
 
     # Ouverture des images
     # Check si c'est une liste ou une commande de recherche type unix
-    if type(file_names) != type(""):
+    if not isinstance(file_names, str):
         imgs = file_names
     else:
         try:
@@ -1191,6 +1054,7 @@ def ProcessImages(file_names, num_images, num_tiges, pas=0.3, seuil="auto",
 
     Num_tiges = num_tiges
     xypoints = base_points
+    # print(imgs, Num_tiges, xypoints)
     ##############
 
     # Lancement du traitement avec ou sans threads
@@ -1204,6 +1068,11 @@ def ProcessImages(file_names, num_images, num_tiges, pas=0.3, seuil="auto",
 
     num_worker = mp.cpu_count()  # Nombre de processeurs
     num_images = len(imgs)
+
+    # Pas trop de worker si pas beaucoup d'images
+    if num_worker > num_images:
+        num_worker = num_images
+        
     output_function_args['old_inum'] = 0
     output_function_args['inum'] = 0
     output_function_args['tot'] = num_images
@@ -1218,7 +1087,7 @@ def ProcessImages(file_names, num_images, num_tiges, pas=0.3, seuil="auto",
     # Add callable class to our task list
     for i, img_name in enumerate(imgs):
         tasks.put( TraiteImageThread( img_name, i, xypoints, memory_size, pas, seuil, Np, show_tige, rayonfilter,
-                                      method, end_points, tiges_seuil_offset) )
+                                      method, end_points, tiges_seuil_offset, output_fig) )
 
     # Add the stop to kill workers at the end
     for i in range(num_worker):
@@ -1255,6 +1124,7 @@ def ProcessImages(file_names, num_images, num_tiges, pas=0.3, seuil="auto",
 
     output = {'tiges_data': output_data, 'tiges_info': infos}
 
+    print('Done')
     if outputdata is not None:
         outputdata.put({"data": output, "imgs": imgs, "xypoints": xypoints})
         return

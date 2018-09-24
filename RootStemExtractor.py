@@ -10,6 +10,7 @@ Petite interface graphique pour traiter les tiges ou les racines
 Version: 08/06/2018
 
 Change:
+24/09/2018: [Hugo] Remove test dectection (ne marche pas en Thread avec matplotlib!) + Correction bug pour traiter une seule image.
 08/06/2018: [Hugo] Correct queue.qsize() bug in osX (car marche pas sur cette plateforme
 18/04/2018: [Hugo] correct datetime bug. Set percentdiam to 1.4 in MethodOlivier (previous 0.9). Windows system can now use thread
 22/10/2017: [Hugo] Optimisation du positionnement du GUI, utilisation de Tk.grid a la place de Tk.pack
@@ -70,7 +71,7 @@ from ttk import Style, Button, Frame, Progressbar, Entry, Scale
 from threading import Thread
 import Queue
 
-__version__ = '08062018'
+__version__ = '24092018'
 
 ########################## GLOBAL DATA ########################################
 data_out = None
@@ -96,14 +97,14 @@ nbclick = 0
 base_tiges = []
 btige_plt = []
 btige_text = []
-tige_id_mapper = {} #Pour changer le nom des tiges
+tige_id_mapper = {}  # Pour changer le nom des tiges
 tiges_colors = None
 dtphoto = []
-local_photo_path = False #If true the photo path is removed
-thread_process = None #To store the thread that run image processing
+local_photo_path = False  # If true the photo path is removed
+thread_process = None  # To store the thread that run image processing
 infos_traitement = None
 old_step = 0
-add_dist_draw=False
+add_dist_draw = False
 dist_measure_pts = []
 pixel_distance = None
 cm_distance = None
@@ -112,10 +113,11 @@ B_data = {}
 Beta_data = {}
 End_point_data = {}
 End_point_plot = {}
-Tiges_seuil_offset = {} #Enregistrer les offset des tiges
+Tiges_seuil_offset = {}  # Enregistrer les offset des tiges
 Crops_data = []
 
 PAS_TRAITEMENT = 0.3
+
 
 def reset_graph_data():
     global img_object, text_object, tige_plot_object, End_point_plot
@@ -709,7 +711,7 @@ def update_tk_progress(infos, root):
 
 
         #New version with Tkk progressbar
-        if im_num != old_step:
+        if im_num != old_step and tot > 1:
             old_step = im_num
             #print(old_step, nstep, nstep-old_step)
             dstep = (im_num-old_num)/float(tot-1) * 100.
@@ -737,7 +739,11 @@ def check_process():
         root.wm_title("RootStemExtractor")
         thread_process.join()
         infos_traitement = None
-        process_data()
+        try:
+            process_data()
+        except Exception as e:
+            print('Failed to process data')
+            print(e)
 
 def process_data():
     global data_out, imgs_out, base_pts_out, traitement_file
@@ -790,13 +796,8 @@ def launch_process():
 
     Crops_data = []
     max_array_size = 10000
-    #Test si c'est windows -> pas de version parallele car bug
-    if (platform.system().lower() == "windows") or (len(files_to_process)<2):
-        #Windows as not shared memory capacity... to bad!!!
-        is_thread = False
-    else:
-        #True
-        is_thread = True
+    #Windows OK in thread now
+    is_thread = True
 
     if len(base_tiges) > 0:
 
@@ -806,26 +807,32 @@ def launch_process():
 
         data_out = Queue.Queue()
 
-        if len(files_to_process) > 1:
-            print('Pre-processing last image (to get maximum plant size)')
-            #Preprocessing to guess the max size of the objects and set crop zone for each of them
-            pre_data = {}
+        if len(files_to_process) > 0:
 
-            pre_data = ProcessImages(file_names=files_to_process[-1],
-                                     num_images='all',
-                                     num_tiges=len(base_tiges),
-                                     base_points=base_tiges, thread=is_thread,
-                                     pas=PAS_TRAITEMENT,
-                                     tiges_seuil_offset=Tiges_seuil_offset,
-                                     output_function=none_print)
+            if len(files_to_process) > 1:
+                print('Pre-processing last image (to get maximum plant size)')
+                #Preprocessing to guess the max size of the objects and set crop zone for each of them
+                pre_data = {}
+
+                pre_data = ProcessImages(file_names=files_to_process[-1],
+                                         num_images='all',
+                                         num_tiges=len(base_tiges),
+                                         base_points=base_tiges, thread=is_thread,
+                                         pas=PAS_TRAITEMENT,
+                                         tiges_seuil_offset=Tiges_seuil_offset,
+                                         output_function=none_print)
 
 
-            tiges_x, tiges_y, tiges_tailles, tiges_angles, tiges_lines,  = traite_tiges2(pre_data[0]['tiges_data'],
+                tiges_x, tiges_y, tiges_tailles, tiges_angles, tiges_lines,  = traite_tiges2(pre_data[0]['tiges_data'],
                                                                                          pas=PAS_TRAITEMENT )
-            #print(tiges_tailles/0.3)
-            #print(tiges_x.shape)
-            max_array_size = tiges_x.shape[2] + 100
+                #print(tiges_tailles/0.3)
+                #print(tiges_x.shape)
+                max_array_size = tiges_x.shape[2] + 100
 
+            else:
+
+                max_array_size = 10000
+                
             thread_process = Thread(name="ImageProcessing",
                                               target=ProcessImages,
                                               kwargs={'file_names':files_to_process,
@@ -1321,22 +1328,26 @@ def plot_moyenne():
         print(u"Pas de serie temporelle, une seule photo traitée")
 
 
-#Fonction pour tester la detection sur une tige et une image
+def No_output_print(**kwargs):
+    pass
+
+
+# Fonction pour tester la detection sur une tige et une image
 def test_detection():
-
-    #Au moins une base de tige et une image
-    if cur_image is not None and len(base_tiges)>0 :
-
-        #Load cur image
+    global thread_process, data_out
+    
+    # Au moins une base de tige et une image
+    if cur_image is not None and len(base_tiges)>0:
+        # Load cur image
         imtmp = Image(color_transform='COLOR_RGB2BGR', maxwidth=None)
         imtmp.load(files_to_process[cur_image])
-
+        
         oldxlims = ax.get_xlim()
         oldylims = ax.get_ylim()
-
-        #Affiche l'image
-        fig = mpl.figure("test")
+        
+        fig = mpl.figure('test')
         axt = fig.add_subplot(111)
+        
         #Check BW
         if imtmp.is_bw():
             axt.imshow(imtmp.render(rescale=False), cmap=mpl.cm.gray)
@@ -1347,7 +1358,7 @@ def test_detection():
         axt.set_ylim(oldylims)
 
         fig.show()
-
+        
         #Selection de la base la plus proche du centre de l'image
         xmbases = array([0.5*(b[0][0]+b[1][0]) for b in base_tiges])
         ymbases = array([0.5*(b[0][1]+b[1][1]) for b in base_tiges])
@@ -1355,7 +1366,24 @@ def test_detection():
 
         #print("Test sur la tige %i"%good_tige)
         #Lance la detection avec affichage des traits de coupe
-        Process_images( [files_to_process[cur_image]],'all', 1, base_points = [ base_tiges[good_tige] ], pas = PAS_TRAITEMENT, thread=False, show_tige=True)
+        data_out = Queue.Queue()
+        thread_process = Thread(name='TestDetection',
+                                target=ProcessImages,
+                                kwargs={'file_names':[files_to_process[cur_image]],
+                                        'num_images': 'all',
+                                        'num_tiges': 1,
+                                        'base_points':[base_tiges[good_tige]],
+                                        'pas':PAS_TRAITEMENT,
+                                        'thread':True,
+                                        'show_tige':True,
+                                        'output_function':No_output_print,
+                                        'outputdata':data_out,
+                                        'output_fig': fig})
+
+        
+        thread_process.setDaemon(True)
+        thread_process.start()
+        check_process()
 
 def save_tige_idmapper():
     print('Save data...')
@@ -2010,7 +2038,7 @@ if __name__ == '__main__':
     #check_black = Tk.BooleanVar()
     #check_black.set(False)
     #options_menu.add_checkbutton(label="Photos noires (<5Mo)", onvalue=True, offvalue=False, variable=check_black)
-    options_menu.add_command(label=u"Test detection", command=test_detection)
+    # options_menu.add_command(label=u"Test detection", command=test_detection) # TODO: BUG WITH THREAD
     options_menu.add_command(label=u"Calibration (pix/cm)", command=pixel_calibration)
     #TODO: Pour trier ou non les photos
     #sort_photo_num = Tk.BooleanVar()
